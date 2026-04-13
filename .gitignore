@@ -1,0 +1,69 @@
+.DS_Store
+Thumbs.db
+
+# Editor and IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs and runtime files
+*.log
+*.pid
+*.pid.lock
+*.seed
+
+# Go build outputs
+bin/
+pkg/
+*.test
+*.out
+coverage.out
+.coverprofile
+
+# Go tooling caches
+go.work.sum
+
+# C and C++ build outputs
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+Makefile.cache
+compile_commands.json
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.idb
+*.d
+*.gcda
+*.gcno
+*.gcov
+
+# Generated binaries and archives
+dist/
+release/
+debug/
+out/
+tmp/
+temp/
+
+# Misc generated files
+*.stackdump
+*.tar
+*.tar.gz
+*.zip
