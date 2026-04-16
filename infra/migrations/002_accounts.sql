@@ -6,8 +6,8 @@ CREATE TABLE accounts (
     balance BIGINT NOT NULL DEFAULT 0,
     version BIGINT NOT NULL DEFAULT 0,
     status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
-    created_at TIMESTAMPZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE accounts ADD CONSTRAINT check_positive_balance CHECK (balance >= 0);
 CREATE INDEX idx_accounts_code ON accounts(account_code);

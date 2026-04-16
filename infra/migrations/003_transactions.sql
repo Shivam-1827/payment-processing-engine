@@ -5,6 +5,6 @@ CREATE TABLE ledger_transactions (
     status VARCHAR(30) NOT NULL,
     currency CHAR(3) NOT NULL,
     amount BIGINT NOT NULL,
-    created_at TIMESTAMPZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_ledger_transactions_status ON ledger_transactions(status);

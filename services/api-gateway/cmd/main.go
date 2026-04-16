@@ -6,12 +6,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/Shivam-1827/payment-engine/services/api-gateway/internal/auth"
 	"github.com/Shivam-1827/payment-engine/services/api-gateway/internal/config"
 	"github.com/Shivam-1827/payment-engine/services/api-gateway/internal/idempotency"
+	"github.com/Shivam-1827/payment-engine/services/api-gateway/internal/queue"
 	"github.com/Shivam-1827/payment-engine/services/api-gateway/internal/transport"
 
 	"github.com/go-chi/chi/v5"
@@ -38,7 +40,10 @@ func main() {
 	// 4. Dependency Injection
 	idempStore := idempotency.NewRedisStore(rdb)
 	authenticator := auth.NewHashedAPIKeyAuthenticator()
-	paymentHandler := transport.NewPaymentHandler(idempStore, logger)
+	kafkaBrokers := strings.Split(getEnv("KAFKA_BROKERS", "localhost:9092"), ",")
+	kafkaProducer := queue.NewKafkaProducer(kafkaBrokers, getEnv("KAFKA_TOPIC", "payment_intents"), logger)
+	defer kafkaProducer.Close()
+	paymentHandler := transport.NewPaymentHandler(idempStore, kafkaProducer, logger)
 
 	// 5. Router & Global Middleware Setup
 	r := chi.NewRouter()
@@ -51,7 +56,7 @@ func main() {
 	r.Route("/v1/payments", func(r chi.Router) {
 		r.Use(transport.RequireAuth(authenticator))
 		r.Use(transport.EnforceIdempotencyKey) // 🛡️ Fully enforced here
-		
+
 		r.Post("/", paymentHandler.HandleCreatePayment)
 	})
 
@@ -85,4 +90,13 @@ func main() {
 		logger.Error("server forced to shutdown", "error", err)
 	}
 	logger.Info("API gateway exited cleanly")
+}
+
+func getEnv(key, fallback string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+
+	return value
 }

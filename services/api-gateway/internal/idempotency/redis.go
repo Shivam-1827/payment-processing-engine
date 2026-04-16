@@ -19,6 +19,7 @@ var ErrConcurrentRequest = errors.New("request is already processing")
 type Store interface {
 	AcquireLock(ctx context.Context, key string) (isNew bool, cachedVal string, err error)
 	SaveResponse(ctx context.Context, key string, responseJSON string) error
+	Delete(ctx context.Context, key string) error
 }
 
 type RedisStore struct {
@@ -53,4 +54,8 @@ func (s *RedisStore) AcquireLock(ctx context.Context, key string) (bool, string,
 
 func (s *RedisStore) SaveResponse(ctx context.Context, key string, responseJSON string) error {
 	return s.client.Set(ctx, key, responseJSON, KeyExpiration).Err()
+}
+
+func (s *RedisStore) Delete(ctx context.Context, key string) error {
+	return s.client.Del(ctx, key).Err()
 }
