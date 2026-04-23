@@ -2,51 +2,78 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
+	"github.com/Shivam-1827/payment-engine/services/orchestrator/internal/bank"
 	"github.com/Shivam-1827/payment-engine/services/orchestrator/internal/db"
 	"github.com/Shivam-1827/payment-engine/services/orchestrator/internal/ledger"
+	"github.com/Shivam-1827/payment-engine/services/orchestrator/internal/worker"
 )
 
-func main(){
+func main() {
+	// 1. Setup Logging
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	slog.SetDefault(logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	setupSignalHandler(cancel, logger)
 
-	setupSignalHandler(cancel)
-
-	dbURL := os.Getenv("DB_URL")
-	if dbURL == "" {
-		dbURL = "postgres://ledger_admin:supersecretpassword@localhost:5432/payment_engine?sslmode=disable"
-	}
-
-	log.Println("Connecting to the database...")
+	// 2. Setup Database (The Vault)
+	dbURL := getEnv("DB_URL", "postgres://ledger_admin:supersecretpassword@localhost:5432/payment_engine?sslmode=disable")
 	pool, err := db.NewPool(ctx, dbURL)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		logger.Error("failed to connect to database", "error", err)
+		os.Exit(1)
 	}
-
 	defer pool.Close()
-	log.Println("Database connection established")
+	logger.Info("✅ Database connection established")
 
+	// 3. Initialize Services
 	repo := ledger.NewRepository(pool)
-	_ = ledger.NewService(repo)
+	ledgerSvc := ledger.NewService(repo)
+	chaosBank := bank.NewMockChaosBank(logger)
 
-	log.Println("Orchestrator service is running. Waiting for events...")
+	// 4. Initialize Kafka Worker
+	kafkaBrokers := strings.Split(getEnv("KAFKA_BROKERS", "localhost:9092"), ",")
+	topic := getEnv("KAFKA_TOPIC_VALIDATED", "payment_validated")
+	groupID := getEnv("KAFKA_GROUP_ID", "go_orchestrator_group")
 
+	paymentWorker := worker.NewPaymentWorker(kafkaBrokers, topic, groupID, ledgerSvc, chaosBank, logger)
+	defer paymentWorker.Close()
+
+	// 5. Run Worker in a Goroutine
+	go func() {
+		paymentWorker.Run(ctx)
+	}()
+
+	// Block main thread until context is cancelled
 	<-ctx.Done()
-	log.Println("Shutting down Orchestrator Service gracefully");
+	
+	// Graceful shutdown period
+	logger.Info("Shutting down Orchestrator Service, waiting for active transactions to finish...")
+	time.Sleep(2 * time.Second) // Allow in-flight DB transactions to complete
+	logger.Info("Orchestrator successfully terminated")
 }
 
-func setupSignalHandler(cancel context.CancelFunc){
+func setupSignalHandler(cancel context.CancelFunc, logger *slog.Logger) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	go func ()  {
+	go func() {
 		<-c
-		log.Println("\n Received termination signal. Initiating shotdown...")
+		logger.Warn("received termination signal, initiating shutdown sequence")
 		cancel()
 	}()
+}
+
+func getEnv(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
 }
