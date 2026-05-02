@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 )
@@ -27,12 +26,15 @@ type HashedAPIKeyAuthenticator struct {
 }
 
 func NewHashedAPIKeyAuthenticator() *HashedAPIKeyAuthenticator {
-	// Let's assume the real API key given to the user is: "sk_live_51M0ckK3y..."
-	// The SHA-256 hash of "sk_live_51M0ckK3y" is below. We NEVER store the plaintext.
-	mockKeyHash := "c8d8b6f3b0e3e2a0134a6df15545a99307771761d4a0f44bc19ba6b29f9e578c"
-
 	hashes := make(map[string]*Merchant)
-	hashes[mockKeyHash] = &Merchant{ID: "merch_001", Name: "Acme Corp"}
+
+	// Dynamically compute the real SHA-256 hash of our test key on startup.
+	testKey := "sk_live_51M0ckK3y"
+	hash := sha256.Sum256([]byte(testKey))
+	correctHashHex := hex.EncodeToString(hash[:])
+
+	// Store the dynamically generated hash.
+	hashes[correctHashHex] = &Merchant{ID: "merch_001", Name: "Acme Corp"}
 
 	return &HashedAPIKeyAuthenticator{
 		merchantKeyHashes: hashes,
@@ -54,10 +56,6 @@ func (a *HashedAPIKeyAuthenticator) Authenticate(ctx context.Context, apiKey str
 		return nil, ErrUnauthorized
 	}
 
-	// 3. Constant time compare to prevent timing attacks
-	if subtle.ConstantTimeCompare([]byte(incomingHashHex), []byte(incomingHashHex)) == 1 {
-		return merchant, nil
-	}
-
-	return nil, ErrUnauthorized
+	// 3. The lookup already proved the hash matches a stored merchant.
+	return merchant, nil
 }

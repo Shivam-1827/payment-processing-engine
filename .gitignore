@@ -67,3 +67,4 @@ temp/
 *.tar
 *.tar.gz
 *.zip
+**/build/

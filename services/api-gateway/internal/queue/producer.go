@@ -28,6 +28,7 @@ func NewKafkaProducer(brokers []string, topic string, logger *slog.Logger) *Kafk
 		RequiredAcks: 	kafka.RequireAll,
 		MaxAttempts: 	5,
 		BatchTimeout: 	10* time.Millisecond,
+		AllowAutoTopicCreation: true,
 	}
 
 	return  &KafkaProducer{writer: w, logger: logger}

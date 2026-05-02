@@ -18,7 +18,7 @@ int main() {
 
     try {
         // 2. Initialize the Kafka Wrapper (Handles polling, callbacks, and memory safety)
-        KafkaClient kafka("localhost:9092", "cpp_sequencer_group", "payment_intents", "payment_validated");
+        KafkaClient kafka("redpanda:29092", "cpp_sequencer_group", "payment_intents", "payment_validated");
         SequencerEngine engine;
 
         std::cout << "🚀 C++ Sequencer running. Waiting for events..." << std::endl;

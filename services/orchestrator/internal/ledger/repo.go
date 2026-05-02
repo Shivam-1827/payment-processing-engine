@@ -65,7 +65,7 @@ func (r *Repository) transferTx(ctx context.Context, req TransferRequest) error 
 		return err
 	}
 
-	// 2. Deadlock Prevention: Always lock the smaller UUID first
+	// 2. Deadlock Prevention: Lock the smaller UUID first and explicitly cast to ::uuid
 	var firstLock, secondLock uuid.UUID
 	if req.FromAccountID.String() < req.ToAccountID.String() {
 		firstLock, secondLock = req.FromAccountID, req.ToAccountID
@@ -73,36 +73,52 @@ func (r *Repository) transferTx(ctx context.Context, req TransferRequest) error 
 		firstLock, secondLock = req.ToAccountID, req.FromAccountID
 	}
 
-	_, err = tx.Exec(ctx, "SELECT id FROM accounts WHERE id = ANY($1) FOR UPDATE", []uuid.UUID{firstLock, secondLock})
-	if err != nil { return err }
+	_, err = tx.Exec(ctx, "SELECT id FROM accounts WHERE id IN ($1::uuid, $2::uuid) FOR UPDATE", firstLock, secondLock)
+	if err != nil {
+		return err
+	}
 
 	// 3. Balance & Currency Check
 	var currentBalance int64
 	var dbCurrency string
 	err = tx.QueryRow(ctx, "SELECT balance, currency FROM accounts WHERE id = $1", req.FromAccountID).Scan(&currentBalance, &dbCurrency)
-	if err != nil { return err }
-	if dbCurrency != req.Currency { return ErrCurrencyMismatch }
-	if currentBalance < req.Amount { return ErrInsufficientFunds }
+	if err != nil {
+		return err
+	}
+	if dbCurrency != req.Currency {
+		return ErrCurrencyMismatch
+	}
+	if currentBalance < req.Amount {
+		return ErrInsufficientFunds
+	}
 
 	// 4. Update Balances
 	_, err = tx.Exec(ctx, "UPDATE accounts SET balance = balance - $1, version = version + 1 WHERE id = $2", req.Amount, req.FromAccountID)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = tx.Exec(ctx, "UPDATE accounts SET balance = balance + $1, version = version + 1 WHERE id = $2", req.Amount, req.ToAccountID)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 
 	// 5. Insert Double-Entry Ledger Rows
 	_, err = tx.Exec(ctx, `
 		INSERT INTO ledger_entries(transaction_id, account_id, amount)
-		VALUES ($1, $2, $3), ($1, $4, $5)`, 
+		VALUES ($1, $2, $3), ($1, $4, $5)`,
 		txnID, req.FromAccountID, -req.Amount, req.ToAccountID, req.Amount)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 
-	// 6. OUTBOX PATTERN: Publish to Kafka Event Log securely
+	// 6. OUTBOX PATTERN: Explicitly cast $1::uuid and $2::numeric to prevent SQLSTATE 42P08
 	_, err = tx.Exec(ctx, `
 		INSERT INTO outbox_events (aggregate_type, aggregate_id, event_type, payload)
-		VALUES ('payment', $1, 'PAYMENT_COMPLETED', jsonb_build_object('transaction_id', $1, 'amount', $2))`, 
+		VALUES ('payment', $1::uuid, 'PAYMENT_COMPLETED', jsonb_build_object('transaction_id', $1::uuid, 'amount', $2::numeric))`,
 		txnID, req.Amount)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 
 	return tx.Commit(ctx)
 }
